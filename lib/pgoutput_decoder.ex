@@ -2,11 +2,12 @@ defmodule PgoutputDecoder do
   defmodule Messages do
     defmodule(Begin, do: defstruct([:final_lsn, :commit_timestamp, :xid]))
     defmodule(Commit, do: defstruct([:flags, :lsn, :end_lsn, :commit_timestamp]))
+    defmodule(Origin, do: defstruct([:origin_commit_lsn, :name]))
   end
 
   @pg_epoch DateTime.from_iso8601("2000-01-01T00:00:00Z")
 
-  alias Messages.{Begin, Commit}
+  alias Messages.{Begin, Commit, Origin}
 
   @moduledoc """
   Documentation for PgoutputDecoder.
@@ -45,6 +46,17 @@ defmodule PgoutputDecoder do
       lsn: decode_lsn(lsn),
       end_lsn: decode_lsn(end_lsn),
       commit_timestamp: pgtimestamp_to_timestamp(timestamp)
+    }
+  end
+
+  # TODO: Verify this is correct with real data from Postgres
+  defp decode_message_impl(
+         "O" <>
+           <<lsn::binary-8, name::binary>>
+       ) do
+    %Origin{
+      origin_commit_lsn: decode_lsn(lsn),
+      name: name
     }
   end
 

@@ -1,6 +1,6 @@
 defmodule PgoutputDecoderTest do
   use ExUnit.Case
-  alias PgoutputDecoder.Messages.{Begin, Commit}
+  alias PgoutputDecoder.Messages.{Begin, Commit, Origin}
 
   test "decodes begin messages" do
     {:ok, expected_dt_no_microseconds, 0} = DateTime.from_iso8601("2019-07-18T17:02:35Z")
@@ -24,5 +24,13 @@ defmodule PgoutputDecoderTest do
              end_lsn: {2, 2_817_829_040},
              commit_timestamp: expected_dt
            }
+  end
+
+  test "decodes origin messages" do
+    assert PgoutputDecoder.decode_message(<<79, 0, 0, 0, 2, 167, 244, 168, 128>> <> "Elmer Fud") ==
+             %Origin{
+               origin_commit_lsn: {2, 2_817_828_992},
+               name: "Elmer Fud"
+             }
   end
 end
