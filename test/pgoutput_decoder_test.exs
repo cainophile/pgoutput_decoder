@@ -1,6 +1,6 @@
 defmodule PgoutputDecoderTest do
   use ExUnit.Case
-  alias PgoutputDecoder.Messages.{Begin, Commit, Origin}
+  alias PgoutputDecoder.Messages.{Begin, Commit, Origin, Relation, Relation.Column}
 
   test "decodes begin messages" do
     {:ok, expected_dt_no_microseconds, 0} = DateTime.from_iso8601("2019-07-18T17:02:35Z")
@@ -32,5 +32,32 @@ defmodule PgoutputDecoderTest do
                origin_commit_lsn: {2, 2_817_828_992},
                name: "Elmer Fud"
              }
+  end
+
+  test "decodes relation messages" do
+    assert PgoutputDecoder.decode_message(
+             <<82, 0, 0, 96, 0, 112, 117, 98, 108, 105, 99, 0, 102, 111, 111, 0, 100, 0, 2, 0, 98,
+               97, 114, 0, 0, 0, 0, 25, 255, 255, 255, 255, 1, 105, 100, 0, 0, 0, 0, 23, 255, 255,
+               255, 255>>
+           ) == %Relation{
+             id: 24576,
+             namespace: "public",
+             name: "foo",
+             replica_identity: :default,
+             columns: [
+               %Column{
+                 flags: [],
+                 name: "bar",
+                 type: :text,
+                 type_modifier: 4_294_967_295
+               },
+               %Column{
+                 flags: [:key],
+                 name: "id",
+                 type: :int4,
+                 type_modifier: 4_294_967_295
+               }
+             ]
+           }
   end
 end

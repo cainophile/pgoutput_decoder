@@ -3,11 +3,17 @@ defmodule PgoutputDecoder do
     defmodule(Begin, do: defstruct([:final_lsn, :commit_timestamp, :xid]))
     defmodule(Commit, do: defstruct([:flags, :lsn, :end_lsn, :commit_timestamp]))
     defmodule(Origin, do: defstruct([:origin_commit_lsn, :name]))
+    defmodule(Relation, do: defstruct([:id, :namespace, :name, :replica_identity, :columns]))
+
+    defmodule(Relation.Column,
+      do: defstruct([:flags, :name, :type, :type_modifier])
+    )
   end
 
   @pg_epoch DateTime.from_iso8601("2000-01-01T00:00:00Z")
 
-  alias Messages.{Begin, Commit, Origin}
+  alias Messages.{Begin, Commit, Origin, Relation, Relation.Column}
+  alias PgoutputDecoder.OidDatabase
 
   @moduledoc """
   Documentation for PgoutputDecoder.
@@ -58,6 +64,57 @@ defmodule PgoutputDecoder do
       origin_commit_lsn: decode_lsn(lsn),
       name: name
     }
+  end
+
+  defp decode_message_impl(
+         "R" <>
+           <<id::integer-32, rest::binary>>
+       ) do
+    [
+      namespace
+      | [name | [<<replica_identity::binary-1, _number_of_columns::integer-16, columns::binary>>]]
+    ] = String.split(rest, <<0>>, parts: 3)
+
+    # TODO: Handle case where pg_catalog is blank, we should still return the schema as pg_catalog
+    friendly_replica_identity =
+      case replica_identity do
+        "d" -> :default
+        "n" -> :nothing
+        "f" -> :all_columns
+        "i" -> :index
+      end
+
+    %Relation{
+      id: id,
+      namespace: namespace,
+      name: name,
+      replica_identity: friendly_replica_identity,
+      columns: decode_columns(columns)
+    }
+  end
+
+  defp decode_columns(binary, accumulator \\ [])
+  defp decode_columns(<<>>, accumulator), do: Enum.reverse(accumulator)
+
+  defp decode_columns(<<flags::integer-8, rest::binary>>, accumulator) do
+    [name | [<<data_type_id::integer-32, type_modifier::integer-32, columns::binary>>]] =
+      String.split(rest, <<0>>, parts: 2)
+
+    decoded_flags =
+      case flags do
+        1 -> [:key]
+        _ -> []
+      end
+
+    decode_columns(columns, [
+      %Column{
+        name: name,
+        flags: decoded_flags,
+        type: OidDatabase.name_for_type_id(data_type_id),
+        type_modifier: type_modifier
+      }
+      | accumulator
+    ])
   end
 
   defp pgtimestamp_to_timestamp(microsecond_offset) when is_integer(microsecond_offset) do
