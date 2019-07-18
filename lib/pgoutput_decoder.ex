@@ -4,6 +4,7 @@ defmodule PgoutputDecoder do
     defmodule(Commit, do: defstruct([:flags, :lsn, :end_lsn, :commit_timestamp]))
     defmodule(Origin, do: defstruct([:origin_commit_lsn, :name]))
     defmodule(Relation, do: defstruct([:id, :namespace, :name, :replica_identity, :columns]))
+    defmodule(Unsupported, do: defstruct([:data]))
 
     defmodule(Relation.Column,
       do: defstruct([:flags, :name, :type, :type_modifier])
@@ -12,7 +13,7 @@ defmodule PgoutputDecoder do
 
   @pg_epoch DateTime.from_iso8601("2000-01-01T00:00:00Z")
 
-  alias Messages.{Begin, Commit, Origin, Relation, Relation.Column}
+  alias Messages.{Begin, Commit, Origin, Relation, Unsupported, Relation.Column}
   alias PgoutputDecoder.OidDatabase
 
   @moduledoc """
@@ -92,6 +93,8 @@ defmodule PgoutputDecoder do
       columns: decode_columns(columns)
     }
   end
+
+  defp decode_message_impl(binary), do: %Unsupported{data: binary}
 
   defp decode_columns(binary, accumulator \\ [])
   defp decode_columns(<<>>, accumulator), do: Enum.reverse(accumulator)
