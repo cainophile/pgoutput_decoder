@@ -1,11 +1,12 @@
 defmodule PgoutputDecoder do
   defmodule Messages do
     defmodule(Begin, do: defstruct([:final_lsn, :commit_timestamp, :xid]))
+    defmodule(Commit, do: defstruct([:flags, :lsn, :end_lsn, :commit_timestamp]))
   end
 
   @pg_epoch DateTime.from_iso8601("2000-01-01T00:00:00Z")
 
-  alias Messages.{Begin}
+  alias Messages.{Begin, Commit}
 
   @moduledoc """
   Documentation for PgoutputDecoder.
@@ -26,13 +27,24 @@ defmodule PgoutputDecoder do
 
   defp decode_message_impl(
          "B" <>
-           <<xlog_file::integer-32, xlog_offset::integer-32, timestamp::integer-64,
-             xid::integer-32>>
+           <<lsn::binary-8, timestamp::integer-64, xid::integer-32>>
        ) do
     %Begin{
-      final_lsn: {xlog_file, xlog_offset},
+      final_lsn: decode_lsn(lsn),
       commit_timestamp: pgtimestamp_to_timestamp(timestamp),
       xid: xid
+    }
+  end
+
+  defp decode_message_impl(
+         "C" <>
+           <<_flags::binary-1, lsn::binary-8, end_lsn::binary-8, timestamp::integer-64>>
+       ) do
+    %Commit{
+      flags: [],
+      lsn: decode_lsn(lsn),
+      end_lsn: decode_lsn(end_lsn),
+      commit_timestamp: pgtimestamp_to_timestamp(timestamp)
     }
   end
 
@@ -41,4 +53,7 @@ defmodule PgoutputDecoder do
 
     DateTime.add(epoch, microsecond_offset, :microsecond)
   end
+
+  defp decode_lsn(<<xlog_file::integer-32, xlog_offset::integer-32>>),
+    do: {xlog_file, xlog_offset}
 end
