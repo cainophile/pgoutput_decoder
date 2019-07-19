@@ -14,6 +14,10 @@ defmodule PgoutputDecoder do
       do: defstruct([:relation_id, :changed_key_tuple_data, :old_tuple_data])
     )
 
+    defmodule(Truncate,
+      do: defstruct([:number_of_relations, :options, :truncated_relations])
+    )
+
     defmodule(Unsupported, do: defstruct([:data]))
 
     defmodule(Relation.Column,
@@ -32,6 +36,7 @@ defmodule PgoutputDecoder do
     Insert,
     Update,
     Delete,
+    Truncate,
     Unsupported
   }
 
@@ -163,6 +168,27 @@ defmodule PgoutputDecoder do
       "K" -> Map.put(base_delete_msg, :changed_key_tuple_data, decoded_tuple_data)
       "O" -> Map.put(base_delete_msg, :old_tuple_data, decoded_tuple_data)
     end
+  end
+
+  defp decode_message_impl(
+         <<"T", number_of_relations::integer-32, options::integer-8, column_ids::binary>>
+       ) do
+    truncated_relations =
+      for relation_id_bin <- column_ids |> :binary.bin_to_list() |> Enum.chunk_every(4),
+          do: relation_id_bin |> :binary.list_to_bin() |> :binary.decode_unsigned()
+
+    decoded_options =
+      case options do
+        0 -> []
+        1 -> [:cascade]
+        2 -> [:restart_identity]
+      end
+
+    %Truncate{
+      number_of_relations: number_of_relations,
+      options: decoded_options,
+      truncated_relations: truncated_relations
+    }
   end
 
   defp decode_message_impl(binary), do: %Unsupported{data: binary}

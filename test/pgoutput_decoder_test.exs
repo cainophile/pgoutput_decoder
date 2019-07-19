@@ -9,7 +9,8 @@ defmodule PgoutputDecoderTest do
     Relation.Column,
     Insert,
     Update,
-    Delete
+    Delete,
+    Truncate
   }
 
   test "decodes begin messages" do
@@ -69,6 +70,35 @@ defmodule PgoutputDecoderTest do
                }
              ]
            }
+  end
+
+  describe "truncate messages" do
+    test "decodes messages" do
+      assert PgoutputDecoder.decode_message(<<84, 0, 0, 0, 1, 0, 0, 0, 96, 0>>) ==
+               %Truncate{
+                 number_of_relations: 1,
+                 options: [],
+                 truncated_relations: [24576]
+               }
+    end
+
+    test "decodes messages with cascade option" do
+      assert PgoutputDecoder.decode_message(<<84, 0, 0, 0, 1, 1, 0, 0, 96, 0>>) ==
+               %Truncate{
+                 number_of_relations: 1,
+                 options: [:cascade],
+                 truncated_relations: [24576]
+               }
+    end
+
+    test "decodes messages with restart identity option" do
+      assert PgoutputDecoder.decode_message(<<84, 0, 0, 0, 1, 2, 0, 0, 96, 0>>) ==
+               %Truncate{
+                 number_of_relations: 1,
+                 options: [:restart_identity],
+                 truncated_relations: [24576]
+               }
+    end
   end
 
   describe "data message (TupleData) decoder" do
