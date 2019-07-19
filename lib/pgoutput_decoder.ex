@@ -5,6 +5,11 @@ defmodule PgoutputDecoder do
     defmodule(Origin, do: defstruct([:origin_commit_lsn, :name]))
     defmodule(Relation, do: defstruct([:id, :namespace, :name, :replica_identity, :columns]))
     defmodule(Insert, do: defstruct([:relation_id, :tuple_data]))
+
+    defmodule(Update,
+      do: defstruct([:relation_id, :changed_key_tuple_data, :old_tuple_data, :tuple_data])
+    )
+
     defmodule(Unsupported, do: defstruct([:data]))
 
     defmodule(Relation.Column,
@@ -14,7 +19,7 @@ defmodule PgoutputDecoder do
 
   @pg_epoch DateTime.from_iso8601("2000-01-01T00:00:00Z")
 
-  alias Messages.{Begin, Commit, Origin, Relation, Relation.Column, Insert, Unsupported}
+  alias Messages.{Begin, Commit, Origin, Relation, Relation.Column, Insert, Update, Unsupported}
   alias PgoutputDecoder.OidDatabase
 
   @moduledoc """
@@ -86,30 +91,74 @@ defmodule PgoutputDecoder do
   end
 
   defp decode_message_impl(
-         <<"I", relation_id::integer-32, "N", _number_of_columns::integer-16, tuple_data::binary>>
+         <<"I", relation_id::integer-32, "N", number_of_columns::integer-16, tuple_data::binary>>
        ) do
-    %Insert{relation_id: relation_id, tuple_data: decode_tuple_data(tuple_data)}
+    {<<>>, decoded_tuple_data} = decode_tuple_data(tuple_data, number_of_columns)
+
+    %Insert{
+      relation_id: relation_id,
+      tuple_data: decoded_tuple_data
+    }
+  end
+
+  defp decode_message_impl(
+         <<"U", relation_id::integer-32, "N", number_of_columns::integer-16, tuple_data::binary>>
+       ) do
+    {<<>>, decoded_tuple_data} = decode_tuple_data(tuple_data, number_of_columns)
+
+    %Update{
+      relation_id: relation_id,
+      tuple_data: decoded_tuple_data
+    }
+  end
+
+  defp decode_message_impl(
+         <<"U", relation_id::integer-32, key_or_old::binary-1, number_of_columns::integer-16,
+           tuple_data::binary>>
+       )
+       when key_or_old == "O" or key_or_old == "K" do
+    {<<"N", new_number_of_columns::integer-16, new_tuple_binary::binary>>, old_decoded_tuple_data} =
+      decode_tuple_data(tuple_data, number_of_columns)
+
+    {<<>>, decoded_tuple_data} = decode_tuple_data(new_tuple_binary, new_number_of_columns)
+
+    base_update_msg = %Update{
+      relation_id: relation_id,
+      tuple_data: decoded_tuple_data
+    }
+
+    case key_or_old do
+      "K" -> Map.put(base_update_msg, :changed_key_tuple_data, old_decoded_tuple_data)
+      "O" -> Map.put(base_update_msg, :old_tuple_data, old_decoded_tuple_data)
+    end
   end
 
   defp decode_message_impl(binary), do: %Unsupported{data: binary}
 
-  defp decode_tuple_data(binary, accumulator \\ [])
-  defp decode_tuple_data(<<>>, accumulator), do: accumulator |> Enum.reverse() |> List.to_tuple()
+  defp decode_tuple_data(binary, columns_remaining, accumulator \\ [])
 
-  defp decode_tuple_data(<<"n", rest::binary>>, accumulator),
-    do: decode_tuple_data(rest, [nil | accumulator])
+  defp decode_tuple_data(remaining_binary, 0, accumulator) when is_binary(remaining_binary),
+    do: {remaining_binary, accumulator |> Enum.reverse() |> List.to_tuple()}
 
-  defp decode_tuple_data(<<"u", rest::binary>>, accumulator),
-    do: decode_tuple_data(rest, [:unchanged_toast | accumulator])
+  defp decode_tuple_data(<<"n", rest::binary>>, columns_remaining, accumulator),
+    do: decode_tuple_data(rest, columns_remaining - 1, [nil | accumulator])
 
-  defp decode_tuple_data(<<"t", column_length::integer-32, rest::binary>>, accumulator),
-    do:
-      decode_tuple_data(
-        :erlang.binary_part(rest, {byte_size(rest), -(byte_size(rest) - column_length)}),
-        [
-          :erlang.binary_part(rest, {0, column_length}) | accumulator
-        ]
-      )
+  defp decode_tuple_data(<<"u", rest::binary>>, columns_remaining, accumulator),
+    do: decode_tuple_data(rest, columns_remaining - 1, [:unchanged_toast | accumulator])
+
+  defp decode_tuple_data(
+         <<"t", column_length::integer-32, rest::binary>>,
+         columns_remaining,
+         accumulator
+       ),
+       do:
+         decode_tuple_data(
+           :erlang.binary_part(rest, {byte_size(rest), -(byte_size(rest) - column_length)}),
+           columns_remaining - 1,
+           [
+             :erlang.binary_part(rest, {0, column_length}) | accumulator
+           ]
+         )
 
   defp decode_columns(binary, accumulator \\ [])
   defp decode_columns(<<>>, accumulator), do: Enum.reverse(accumulator)

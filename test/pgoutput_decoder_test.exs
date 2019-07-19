@@ -1,6 +1,15 @@
 defmodule PgoutputDecoderTest do
   use ExUnit.Case
-  alias PgoutputDecoder.Messages.{Begin, Commit, Origin, Relation, Relation.Column, Insert}
+
+  alias PgoutputDecoder.Messages.{
+    Begin,
+    Commit,
+    Origin,
+    Relation,
+    Relation.Column,
+    Insert,
+    Update
+  }
 
   test "decodes begin messages" do
     {:ok, expected_dt_no_microseconds, 0} = DateTime.from_iso8601("2019-07-18T17:02:35Z")
@@ -87,6 +96,43 @@ defmodule PgoutputDecoderTest do
              ) == %Insert{
                relation_id: 24576,
                tuple_data: {:unchanged_toast, "560"}
+             }
+    end
+
+    test "decodes update messages with default replica identity setting" do
+      assert PgoutputDecoder.decode_message(
+               <<85, 0, 0, 96, 0, 78, 0, 2, 116, 0, 0, 0, 7, 101, 120, 97, 109, 112, 108, 101,
+                 116, 0, 0, 0, 3, 53, 54, 48>>
+             ) == %Update{
+               relation_id: 24576,
+               changed_key_tuple_data: nil,
+               old_tuple_data: nil,
+               tuple_data: {"example", "560"}
+             }
+    end
+
+    test "decodes update messages with FULL replica identity setting" do
+      assert PgoutputDecoder.decode_message(
+               <<85, 0, 0, 96, 0, 79, 0, 2, 116, 0, 0, 0, 3, 98, 97, 122, 116, 0, 0, 0, 3, 53, 54,
+                 48, 78, 0, 2, 116, 0, 0, 0, 7, 101, 120, 97, 109, 112, 108, 101, 116, 0, 0, 0, 3,
+                 53, 54, 48>>
+             ) == %Update{
+               relation_id: 24576,
+               changed_key_tuple_data: nil,
+               old_tuple_data: {"baz", "560"},
+               tuple_data: {"example", "560"}
+             }
+    end
+
+    test "decodes update messages with USING INDEX replica identity setting" do
+      assert PgoutputDecoder.decode_message(
+               <<85, 0, 0, 96, 0, 75, 0, 2, 116, 0, 0, 0, 3, 98, 97, 122, 110, 78, 0, 2, 116, 0,
+                 0, 0, 7, 101, 120, 97, 109, 112, 108, 101, 116, 0, 0, 0, 3, 53, 54, 48>>
+             ) == %Update{
+               relation_id: 24576,
+               changed_key_tuple_data: {"baz", nil},
+               old_tuple_data: nil,
+               tuple_data: {"example", "560"}
              }
     end
   end
