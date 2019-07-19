@@ -2,10 +2,13 @@
 
 Parses logical replication messages from Postgres pgoutput plugin
 
+## Documentation
+
+Limited documentation can be found [here](https://hexdocs.pm/pgoutput_decoder/PgoutputDecoder.html)
+
 ## Installation
 
-If [available in Hex](https://hex.pm/docs/publish), the package can be installed
-by adding `pgoutput_decoder` to your list of dependencies in `mix.exs`:
+The package can be installed by adding `pgoutput_decoder` to your list of dependencies in `mix.exs`:
 
 ```elixir
 def deps do
