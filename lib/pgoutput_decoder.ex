@@ -10,6 +10,10 @@ defmodule PgoutputDecoder do
       do: defstruct([:relation_id, :changed_key_tuple_data, :old_tuple_data, :tuple_data])
     )
 
+    defmodule(Delete,
+      do: defstruct([:relation_id, :changed_key_tuple_data, :old_tuple_data])
+    )
+
     defmodule(Unsupported, do: defstruct([:data]))
 
     defmodule(Relation.Column,
@@ -19,7 +23,18 @@ defmodule PgoutputDecoder do
 
   @pg_epoch DateTime.from_iso8601("2000-01-01T00:00:00Z")
 
-  alias Messages.{Begin, Commit, Origin, Relation, Relation.Column, Insert, Update, Unsupported}
+  alias Messages.{
+    Begin,
+    Commit,
+    Origin,
+    Relation,
+    Relation.Column,
+    Insert,
+    Update,
+    Delete,
+    Unsupported
+  }
+
   alias PgoutputDecoder.OidDatabase
 
   @moduledoc """
@@ -130,6 +145,23 @@ defmodule PgoutputDecoder do
     case key_or_old do
       "K" -> Map.put(base_update_msg, :changed_key_tuple_data, old_decoded_tuple_data)
       "O" -> Map.put(base_update_msg, :old_tuple_data, old_decoded_tuple_data)
+    end
+  end
+
+  defp decode_message_impl(
+         <<"D", relation_id::integer-32, key_or_old::binary-1, number_of_columns::integer-16,
+           tuple_data::binary>>
+       )
+       when key_or_old == "K" or key_or_old == "O" do
+    {<<>>, decoded_tuple_data} = decode_tuple_data(tuple_data, number_of_columns)
+
+    base_delete_msg = %Delete{
+      relation_id: relation_id
+    }
+
+    case key_or_old do
+      "K" -> Map.put(base_delete_msg, :changed_key_tuple_data, decoded_tuple_data)
+      "O" -> Map.put(base_delete_msg, :old_tuple_data, decoded_tuple_data)
     end
   end
 

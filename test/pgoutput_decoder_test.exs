@@ -8,7 +8,8 @@ defmodule PgoutputDecoderTest do
     Relation,
     Relation.Column,
     Insert,
-    Update
+    Update,
+    Delete
   }
 
   test "decodes begin messages" do
@@ -133,6 +134,26 @@ defmodule PgoutputDecoderTest do
                changed_key_tuple_data: {"baz", nil},
                old_tuple_data: nil,
                tuple_data: {"example", "560"}
+             }
+    end
+
+    test "decodes DELETE messages with USING INDEX replica identity setting" do
+      assert PgoutputDecoder.decode_message(
+               <<68, 0, 0, 96, 0, 75, 0, 2, 116, 0, 0, 0, 7, 101, 120, 97, 109, 112, 108, 101,
+                 110>>
+             ) == %Delete{
+               relation_id: 24576,
+               changed_key_tuple_data: {"example", nil}
+             }
+    end
+
+    test "decodes DELETE messages with FULL replica identity setting" do
+      assert PgoutputDecoder.decode_message(
+               <<68, 0, 0, 96, 0, 79, 0, 2, 116, 0, 0, 0, 3, 98, 97, 122, 116, 0, 0, 0, 3, 53, 54,
+                 48>>
+             ) == %Delete{
+               relation_id: 24576,
+               old_tuple_data: {"baz", "560"}
              }
     end
   end
