@@ -1,6 +1,6 @@
 defmodule PgoutputDecoderTest do
   use ExUnit.Case
-  alias PgoutputDecoder.Messages.{Begin, Commit, Origin, Relation, Relation.Column}
+  alias PgoutputDecoder.Messages.{Begin, Commit, Origin, Relation, Relation.Column, Insert}
 
   test "decodes begin messages" do
     {:ok, expected_dt_no_microseconds, 0} = DateTime.from_iso8601("2019-07-18T17:02:35Z")
@@ -59,5 +59,35 @@ defmodule PgoutputDecoderTest do
                }
              ]
            }
+  end
+
+  describe "data message (TupleData) decoder" do
+    test "decodes insert messages" do
+      assert PgoutputDecoder.decode_message(
+               <<73, 0, 0, 96, 0, 78, 0, 2, 116, 0, 0, 0, 3, 98, 97, 122, 116, 0, 0, 0, 3, 53, 54,
+                 48>>
+             ) == %Insert{
+               relation_id: 24576,
+               tuple_data: {"baz", "560"}
+             }
+    end
+
+    test "decodes insert messages with null values" do
+      assert PgoutputDecoder.decode_message(
+               <<73, 0, 0, 96, 0, 78, 0, 2, 110, 116, 0, 0, 0, 3, 53, 54, 48>>
+             ) == %Insert{
+               relation_id: 24576,
+               tuple_data: {nil, "560"}
+             }
+    end
+
+    test "decodes insert messages with unchanged toasted values" do
+      assert PgoutputDecoder.decode_message(
+               <<73, 0, 0, 96, 0, 78, 0, 2, 117, 116, 0, 0, 0, 3, 53, 54, 48>>
+             ) == %Insert{
+               relation_id: 24576,
+               tuple_data: {:unchanged_toast, "560"}
+             }
+    end
   end
 end

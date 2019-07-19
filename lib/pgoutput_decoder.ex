@@ -4,6 +4,7 @@ defmodule PgoutputDecoder do
     defmodule(Commit, do: defstruct([:flags, :lsn, :end_lsn, :commit_timestamp]))
     defmodule(Origin, do: defstruct([:origin_commit_lsn, :name]))
     defmodule(Relation, do: defstruct([:id, :namespace, :name, :replica_identity, :columns]))
+    defmodule(Insert, do: defstruct([:relation_id, :tuple_data]))
     defmodule(Unsupported, do: defstruct([:data]))
 
     defmodule(Relation.Column,
@@ -13,7 +14,7 @@ defmodule PgoutputDecoder do
 
   @pg_epoch DateTime.from_iso8601("2000-01-01T00:00:00Z")
 
-  alias Messages.{Begin, Commit, Origin, Relation, Unsupported, Relation.Column}
+  alias Messages.{Begin, Commit, Origin, Relation, Relation.Column, Insert, Unsupported}
   alias PgoutputDecoder.OidDatabase
 
   @moduledoc """
@@ -33,10 +34,7 @@ defmodule PgoutputDecoder do
     decode_message_impl(message)
   end
 
-  defp decode_message_impl(
-         "B" <>
-           <<lsn::binary-8, timestamp::integer-64, xid::integer-32>>
-       ) do
+  defp decode_message_impl(<<"B", lsn::binary-8, timestamp::integer-64, xid::integer-32>>) do
     %Begin{
       final_lsn: decode_lsn(lsn),
       commit_timestamp: pgtimestamp_to_timestamp(timestamp),
@@ -45,8 +43,7 @@ defmodule PgoutputDecoder do
   end
 
   defp decode_message_impl(
-         "C" <>
-           <<_flags::binary-1, lsn::binary-8, end_lsn::binary-8, timestamp::integer-64>>
+         <<"C", _flags::binary-1, lsn::binary-8, end_lsn::binary-8, timestamp::integer-64>>
        ) do
     %Commit{
       flags: [],
@@ -57,20 +54,14 @@ defmodule PgoutputDecoder do
   end
 
   # TODO: Verify this is correct with real data from Postgres
-  defp decode_message_impl(
-         "O" <>
-           <<lsn::binary-8, name::binary>>
-       ) do
+  defp decode_message_impl(<<"O", lsn::binary-8, name::binary>>) do
     %Origin{
       origin_commit_lsn: decode_lsn(lsn),
       name: name
     }
   end
 
-  defp decode_message_impl(
-         "R" <>
-           <<id::integer-32, rest::binary>>
-       ) do
+  defp decode_message_impl(<<"R", id::integer-32, rest::binary>>) do
     [
       namespace
       | [name | [<<replica_identity::binary-1, _number_of_columns::integer-16, columns::binary>>]]
@@ -94,7 +85,31 @@ defmodule PgoutputDecoder do
     }
   end
 
+  defp decode_message_impl(
+         <<"I", relation_id::integer-32, "N", _number_of_columns::integer-16, tuple_data::binary>>
+       ) do
+    %Insert{relation_id: relation_id, tuple_data: decode_tuple_data(tuple_data)}
+  end
+
   defp decode_message_impl(binary), do: %Unsupported{data: binary}
+
+  defp decode_tuple_data(binary, accumulator \\ [])
+  defp decode_tuple_data(<<>>, accumulator), do: accumulator |> Enum.reverse() |> List.to_tuple()
+
+  defp decode_tuple_data(<<"n", rest::binary>>, accumulator),
+    do: decode_tuple_data(rest, [nil | accumulator])
+
+  defp decode_tuple_data(<<"u", rest::binary>>, accumulator),
+    do: decode_tuple_data(rest, [:unchanged_toast | accumulator])
+
+  defp decode_tuple_data(<<"t", column_length::integer-32, rest::binary>>, accumulator),
+    do:
+      decode_tuple_data(
+        :erlang.binary_part(rest, {byte_size(rest), -(byte_size(rest) - column_length)}),
+        [
+          :erlang.binary_part(rest, {0, column_length}) | accumulator
+        ]
+      )
 
   defp decode_columns(binary, accumulator \\ [])
   defp decode_columns(<<>>, accumulator), do: Enum.reverse(accumulator)
