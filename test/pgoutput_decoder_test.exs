@@ -10,7 +10,8 @@ defmodule PgoutputDecoderTest do
     Insert,
     Update,
     Delete,
-    Truncate
+    Truncate,
+    Type
   }
 
   test "decodes begin messages" do
@@ -70,6 +71,18 @@ defmodule PgoutputDecoderTest do
                }
              ]
            }
+  end
+
+  test "decodes type messages" do
+    assert PgoutputDecoder.decode_message(
+             <<89, 0, 0, 128, 52, 112, 117, 98, 108, 105, 99, 0, 101, 120, 97, 109, 112, 108, 101,
+               95, 116, 121, 112, 101, 0>>
+           ) ==
+             %Type{
+               id: 32820,
+               namespace: "public",
+               name: "example_type"
+             }
   end
 
   describe "truncate messages" do

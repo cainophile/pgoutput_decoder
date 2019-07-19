@@ -41,4 +41,6 @@ defmodule PgoutputDecoder.OidDatabase do
   for {type_name, type_id, _array_oid} <- oid_db do
     def name_for_type_id(unquote(type_id)), do: unquote(type_name)
   end
+
+  def name_for_type_id(_), do: :unknown
 end
